@@ -2,6 +2,7 @@ package worker
 
 import (
 	"bytes"
+	context2 "context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"github.com/docker/go-connections/nat"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/gliderlabs/ssh"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grpc-ecosystem/go-grpc-prometheus"
 	log "github.com/noxiouz/zapctx/ctxlog"
@@ -72,6 +74,31 @@ var (
 		workerAPIPrefix + "PurgeBenchmarks",
 	}
 )
+
+type overseerView struct {
+	worker *Worker
+}
+
+func (m *overseerView) ContainerInfo(id string) (*ContainerInfo, bool) {
+	return m.worker.GetContainerInfo(id)
+}
+
+func (m *overseerView) IdentityLevel(id string) (pb.IdentityLevel, error) {
+	plan, err := m.worker.AskPlanByTaskID(id)
+	if err != nil {
+		return pb.IdentityLevel_UNKNOWN, err
+	}
+
+	return plan.Identity, nil
+}
+
+func (m *overseerView) ExecIdentity() pb.IdentityLevel {
+	return m.worker.cfg.SSH.Identity
+}
+
+func (m *overseerView) Exec(ctx context2.Context, id string, cmd []string, env []string, isTty bool, wCh <-chan ssh.Window) (types.HijackedResponse, error) {
+	return m.worker.ovs.Exec(ctx, id, cmd, env, isTty, wCh)
+}
 
 // Worker holds information about jobs, make orders to Observer and communicates with Worker
 type Worker struct {
@@ -151,20 +178,25 @@ func NewWorker(opts ...Option) (m *Worker, err error) {
 		return nil, err
 	}
 
+	if err := m.setupSSH(&overseerView{worker: m}); err != nil {
+		m.Close()
+		return nil, err
+	}
+
 	return m, nil
 }
 
 // Serve starts handling incoming API gRPC requests
 func (m *Worker) Serve() error {
-	defer m.Close()
-
 	m.startTime = time.Now()
 	if err := m.waitMasterApproved(); err != nil {
+		m.Close()
 		return err
 	}
 
 	relayListener, err := relay.NewListener(m.cfg.NPP.Relay.Endpoints, m.key, log.G(m.ctx))
 	if err != nil {
+		m.Close()
 		return err
 	}
 
@@ -177,14 +209,26 @@ func (m *Worker) Serve() error {
 	)
 	if err != nil {
 		log.G(m.ctx).Error("failed to listen", zap.String("address", m.cfg.Endpoint), zap.Error(err))
+		m.Close()
 		return err
 	}
 	m.listener = listener
 
-	log.G(m.ctx).Info("listening for gRPC API connections", zap.Stringer("address", listener.Addr()))
-	err = m.externalGrpc.Serve(listener)
+	wg, ctx := errgroup.WithContext(m.ctx)
+	wg.Go(func() error {
+		return m.RunSSH(ctx)
+	})
+	wg.Go(func() error {
+		log.S(m.ctx).Infof("listening for gRPC API connections on %s", listener.Addr())
+		defer log.S(m.ctx).Infof("finished listening for gRPC API connections on %s", listener.Addr())
 
-	return err
+		return m.externalGrpc.Serve(listener)
+	})
+
+	<-ctx.Done()
+	m.Close()
+
+	return wg.Wait()
 }
 
 func (m *Worker) waitMasterApproved() error {
@@ -377,17 +421,6 @@ func (m *Worker) GetContainerInfo(id string) (*ContainerInfo, bool) {
 	defer m.mu.Unlock()
 	info, ok := m.containers[id]
 	return info, ok
-}
-
-func (m *Worker) getContainerIdByTaskId(id string) (string, bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	info, ok := m.containers[id]
-	if ok {
-		return info.ID, ok
-	}
-	return "", ok
 }
 
 func (m *Worker) Devices(ctx context.Context, request *pb.Empty) (*pb.DevicesReply, error) {
@@ -779,7 +812,7 @@ func (m *Worker) TaskLogs(request *pb.TaskLogsRequest, server pb.Worker_TaskLogs
 		return err
 	}
 	log.G(m.ctx).Info("handling TaskLogs request", zap.Any("request", request))
-	cid, ok := m.getContainerIdByTaskId(request.Id)
+	containerInfo, ok := m.GetContainerInfo(request.Id)
 	if !ok {
 		return status.Errorf(codes.NotFound, "no job with id %s", request.Id)
 	}
@@ -792,7 +825,7 @@ func (m *Worker) TaskLogs(request *pb.TaskLogsRequest, server pb.Worker_TaskLogs
 		Tail:       request.Tail,
 		Details:    request.Details,
 	}
-	reader, err := m.ovs.Logs(server.Context(), cid, opts)
+	reader, err := m.ovs.Logs(server.Context(), containerInfo.ID, opts)
 	if err != nil {
 		return err
 	}
@@ -855,8 +888,8 @@ func (m *Worker) TaskStatus(ctx context.Context, req *pb.ID) (*pb.TaskStatusRepl
 	return reply, nil
 }
 
-func (m *Worker) RunSSH() error {
-	return m.ssh.Run()
+func (m *Worker) RunSSH(ctx context.Context) error {
+	return m.ssh.Run(ctx)
 }
 
 // RunBenchmarks perform benchmarking of Worker's resources.

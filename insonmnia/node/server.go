@@ -53,6 +53,10 @@ type Services interface {
 	Interceptor() grpc.UnaryServerInterceptor
 }
 
+type SSHServer interface {
+	Serve(ctx context.Context) error
+}
+
 // Server is a server for LocalNode instance.
 //
 // Its responsibility is to manage network part, i.e. creating TCP servers and
@@ -64,6 +68,7 @@ type Server struct {
 	// Servers for processing requests.
 	serverGRPC *grpc.Server
 	serverREST *rest.Server
+	serverSSH  SSHServer
 
 	log *zap.SugaredLogger
 }
@@ -107,6 +112,7 @@ func newServer(cfg nodeConfig, services Services, options ...ServerOption) (*Ser
 			GRPC: toLocalAddrs(listenersGRPC),
 			REST: toLocalAddrs(listenersREST),
 		},
+		serverSSH: opts.sshProxy,
 	}
 
 	if opts.allowGRPC {
@@ -169,7 +175,10 @@ func (m *Server) Serve(ctx context.Context) error {
 	wg.Go(func() error {
 		return m.serveHTTP(ctx, network.ListenersREST...)
 	})
-	// TODO: Also add debug server and ssh.
+	wg.Go(func() error {
+		return m.serverSSH.Serve(ctx)
+	})
+	// TODO: Also add debug server.
 
 	<-ctx.Done()
 

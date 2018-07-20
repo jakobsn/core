@@ -9,6 +9,7 @@ import (
 	"github.com/sonm-io/core/insonmnia/logging"
 	"github.com/sonm-io/core/insonmnia/matcher"
 	"github.com/sonm-io/core/insonmnia/npp"
+	"github.com/sonm-io/core/insonmnia/ssh"
 )
 
 type nodeConfig struct {
@@ -18,15 +19,16 @@ type nodeConfig struct {
 }
 
 type Config struct {
-	Node              nodeConfig          `yaml:"node"`
-	NPP               npp.Config          `yaml:"npp"`
-	Log               logging.Config      `yaml:"log"`
-	Blockchain        *blockchain.Config  `yaml:"blockchain"`
-	Eth               accounts.EthConfig  `yaml:"ethereum" required:"false"`
-	DWH               dwh.YAMLConfig      `yaml:"dwh"`
-	MetricsListenAddr string              `yaml:"metrics_listen_addr" default:"127.0.0.1:14003"`
-	Benchmarks        benchmarks.Config   `yaml:"benchmarks"`
-	Matcher           *matcher.YAMLConfig `yaml:"matcher"`
+	Node              nodeConfig             `yaml:"node"`
+	NPP               npp.Config             `yaml:"npp"`
+	Log               logging.Config         `yaml:"log"`
+	Blockchain        *blockchain.Config     `yaml:"blockchain"`
+	Eth               accounts.EthConfig     `yaml:"ethereum" required:"false"`
+	DWH               dwh.YAMLConfig         `yaml:"dwh"`
+	MetricsListenAddr string                 `yaml:"metrics_listen_addr" default:"127.0.0.1:14003"`
+	Benchmarks        benchmarks.Config      `yaml:"benchmarks"`
+	Matcher           *matcher.YAMLConfig    `yaml:"matcher"`
+	SSH               *ssh.ProxyServerConfig `yaml:"ssh"`
 }
 
 // NewConfig loads localNode config from given .yaml file
