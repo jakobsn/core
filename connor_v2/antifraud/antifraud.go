@@ -101,7 +101,10 @@ func (m *antiFraud) checkDeals(ctx context.Context) error {
 			}
 
 			watcher.Failure()
-			m.finishDeal(dealMeta.deal, sonm.BlacklistType_BLACKLIST_WORKER)
+			if err := m.finishDeal(dealMeta.deal, sonm.BlacklistType_BLACKLIST_WORKER); err != nil {
+				m.log.Warn("cannot finish deal", zap.Error(err))
+			}
+			continue
 		} else {
 			m.log.Debug("task quality is fit into required required value", zap.Float64("quality", quality))
 			m.blacklistWatchers[dealMeta.deal.SupplierID.Unwrap()].Success()
@@ -165,5 +168,6 @@ func (m *antiFraud) finishDeal(deal *sonm.Deal, blacklistType sonm.BlacklistType
 		BlacklistType: blacklistType,
 	})
 
+	delete(m.meta, deal.GetId().Unwrap().String())
 	return err
 }
