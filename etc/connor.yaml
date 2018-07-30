@@ -32,6 +32,15 @@ mining:
     update_interval: 15s
     threshold: 0.1
 
+antifraud:
+  task_quality: 0.95
+  quality_check_interval: 15s
+  connection_timeout: 30s
+
+  log_processor:
+    track_interval:  15s
+    task_warmup_delay: 3m
+
 engine:
   # timeout for connections to external services
   # default: 30s

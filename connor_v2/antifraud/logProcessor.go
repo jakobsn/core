@@ -17,11 +17,10 @@ import (
 	"google.golang.org/grpc"
 )
 
-const warmupTime = time.Minute * 3
-
 func NewLogProcessor(cfg *LogProcessorConfig, log *zap.Logger, nodeConnection *grpc.ClientConn, deal *sonm.Deal, taskID string) LogProcessor {
 	taskLogger := log.Named("task-logs").With(zap.String("task_id", taskID), zap.String("deal_id", deal.GetId().Unwrap().String()))
 	return &EthClaymoreLogProcessor{
+		cfg:              cfg,
 		log:              taskLogger,
 		deal:             deal,
 		taskID:           taskID,
@@ -48,6 +47,7 @@ func (m *NilLogProcessor) Run(ctx context.Context) error {
 
 type EthClaymoreLogProcessor struct {
 	log        *zap.Logger
+	cfg        *LogProcessorConfig
 	deal       *sonm.Deal
 	taskID     string
 	taskClient sonm.TaskManagementClient
@@ -60,8 +60,7 @@ type EthClaymoreLogProcessor struct {
 }
 
 func (m *EthClaymoreLogProcessor) TaskQuality() (bool, float64) {
-	//TODO: cfg
-	accurate := m.startTime.Add(warmupTime).Before(time.Now())
+	accurate := m.startTime.Add(m.cfg.TaskWarmupDelay).Before(time.Now())
 	desired := float64(m.deal.Benchmarks.GPUEthHashrate())
 	actual := m.hashrateEWMA.Rate()
 	return accurate, actual / desired
@@ -73,7 +72,7 @@ func (m *EthClaymoreLogProcessor) Run(ctx context.Context) error {
 
 	go m.fetchLogs(ctx)
 	m.log.Info("starting task's warm-up")
-	timer := time.NewTimer(warmupTime)
+	timer := time.NewTimer(m.cfg.TaskWarmupDelay)
 	select {
 	case <-ctx.Done():
 	case <-timer.C:
@@ -89,10 +88,9 @@ func (m *EthClaymoreLogProcessor) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			//TODO: cfg?
-			if m.lastHashrateTime.Add(time.Minute * 2).Before(time.Now()) {
+			if m.lastHashrateTime.Add(m.cfg.TaskWarmupDelay).Before(time.Now()) {
 				m.hashrateEWMA.Update(0.0)
-				m.log.Warn("no hashrate for more than 2 minutes")
+				m.log.Warn("no hashrate after warm-up")
 			} else {
 				m.log.Debug("updating hashrate", zap.Float64("hashrate", m.currentHashrate))
 				// EWMA period is 5 sec, so multiply by 5
@@ -133,8 +131,7 @@ func (m *EthClaymoreLogProcessor) fetchLogs(ctx context.Context) error {
 		DealID: m.deal.Id,
 	}
 
-	// TODO(sshaman1101): config
-	retryTicker := util.NewImmediateTicker(time.Second * 10)
+	retryTicker := util.NewImmediateTicker(m.cfg.LogTrackInterval)
 	defer retryTicker.Stop()
 
 	for {
@@ -167,7 +164,6 @@ func (m *EthClaymoreLogProcessor) parseLogs(ctx context.Context, reader io.Reade
 	scanner := bufio.NewScanner(reader)
 	for scanner.Scan() {
 		line := scanner.Text()
-		//TODO: drop hardcode
 		if strings.Contains(line, "Total Speed: ") {
 			fields := strings.Fields(line)
 			if len(fields) != 13 {

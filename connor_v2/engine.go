@@ -36,11 +36,12 @@ type engine struct {
 	ordersResultsChan chan *Corder
 }
 
-func NewEngine(ctx context.Context, cfg engineConfig, miningCfg miningConfig, price price.Provider, log *zap.Logger, cc *grpc.ClientConn) *engine {
+func NewEngine(ctx context.Context, cfg *Config, price price.Provider, log *zap.Logger, cc *grpc.ClientConn) *engine {
 	return &engine{
-		ctx:               ctx,
-		cfg:               cfg,
-		miningCfg:         miningCfg,
+		ctx: ctx,
+		// todo: use single config
+		cfg:               cfg.Engine,
+		miningCfg:         cfg.Mining,
 		priceProvider:     price,
 		log:               log.Named("engine"),
 		market:            sonm.NewMarketClient(cc),
@@ -48,7 +49,7 @@ func NewEngine(ctx context.Context, cfg engineConfig, miningCfg miningConfig, pr
 		tasks:             sonm.NewTaskManagementClient(cc),
 		ordersCreateChan:  make(chan *Corder, concurrency),
 		ordersResultsChan: make(chan *Corder, concurrency),
-		antiFraud:         antifraud.NewAntiFraud(log.Named("anti-fraud"), cc),
+		antiFraud:         antifraud.NewAntiFraud(cfg.AntiFraud, log.Named("anti-fraud"), cc),
 	}
 }
 
@@ -211,6 +212,7 @@ func (e *engine) processDeal(deal *sonm.Deal) {
 		taskID = taskReply.GetId()
 		log.Info("task started", zap.String("task_id", taskID))
 	}
+
 	ctx, cancel := context.WithCancel(e.ctx)
 	defer cancel()
 	go e.antiFraud.TrackTask(ctx, deal, taskID)

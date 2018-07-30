@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/jinzhu/configor"
 	"github.com/sonm-io/core/accounts"
+	"github.com/sonm-io/core/connor_v2/antifraud"
 	"github.com/sonm-io/core/insonmnia/auth"
 	"github.com/sonm-io/core/insonmnia/benchmarks"
 	"github.com/sonm-io/core/insonmnia/logging"
@@ -63,6 +64,7 @@ type Config struct {
 	Log           logging.Config     `yaml:"log"`
 	Engine        engineConfig       `yaml:"engine"`
 	BenchmarkList benchmarks.Config  `yaml:"benchmarks"`
+	AntiFraud     antifraud.Config   `yaml:"antifraud"`
 
 	Metrics string `yaml:"metrics" default:"127.0.0.1:14005"`
 }

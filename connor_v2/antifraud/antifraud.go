@@ -46,21 +46,22 @@ type antiFraud struct {
 	log               *zap.Logger
 }
 
-func NewAntiFraud(log *zap.Logger, nodeConnection *grpc.ClientConn) AntiFraud {
+func NewAntiFraud(cfg Config, log *zap.Logger, nodeConnection *grpc.ClientConn) AntiFraud {
 	return &antiFraud{
 		meta:              make(map[string]*dealMeta),
 		blacklistWatchers: map[common.Address]*blacklistWatcher{},
 		nodeConnection:    nodeConnection,
 		deals:             sonm.NewDealManagementClient(nodeConnection),
 		log:               log,
+		cfg:               cfg,
 	}
 }
 
-// This blocks until context is cancelled or unrecoverable error met
+// Run blocks until context is cancelled or unrecoverable error met
 func (m *antiFraud) Run(ctx context.Context) error {
 	m.log.Info("starting antifraud")
-	//TODO: cfg
-	ticker := time.NewTicker(time.Second * 10)
+
+	ticker := time.NewTicker(m.cfg.QualityCheckInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -89,11 +90,9 @@ func (m *antiFraud) checkDeals(ctx context.Context) error {
 			continue
 		}
 
-		// TODO(sshaman1101): config
-		requiredTaskQuality := 0.9
-		if quality < requiredTaskQuality {
+		if quality < m.cfg.TaskQuality {
 			m.log.Warn("task quality is less that required, closing deal",
-				zap.Float64("calculated", quality), zap.Float64("required", requiredTaskQuality))
+				zap.Float64("calculated", quality), zap.Float64("required", m.cfg.TaskQuality))
 
 			watcher, ok := m.blacklistWatchers[dealMeta.deal.SupplierID.Unwrap()]
 			if !ok {
@@ -125,7 +124,7 @@ func (m *antiFraud) TrackTask(ctx context.Context, deal *sonm.Deal, taskID strin
 		return fmt.Errorf("could not register spawned task %s, no deal with id %s", taskID, deal.Id.Unwrap().String())
 	}
 
-	meta.logProcessor = NewLogProcessor(m.cfg.LogProcessorConfig, m.log, m.nodeConnection, deal, taskID)
+	meta.logProcessor = NewLogProcessor(&m.cfg.LogProcessorConfig, m.log, m.nodeConnection, deal, taskID)
 	return meta.logProcessor.Run(ctx)
 }
 
@@ -158,8 +157,7 @@ func (m *antiFraud) finishDeal(deal *sonm.Deal, blacklistType sonm.BlacklistType
 	m.log.Info("finishing deal", zap.String("deal_id", deal.GetId().Unwrap().String()),
 		zap.Duration("lifetime", lifeTime(deal)))
 
-	//TODO: do we need timeout here? at least we may make it longer and perform in async way
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), m.cfg.ConnectionTimeout)
 	defer cancel()
 
 	_, err := m.deals.Finish(ctx, &sonm.DealFinishRequest{
