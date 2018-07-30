@@ -106,16 +106,16 @@ func (c *Connor) Serve(ctx context.Context) error {
 		zap.Int("orders_create", len(set.toCreate)),
 		zap.Int("deals_restore", len(existingDeals.GetDeal())))
 
+	for _, deal := range existingDeals.GetDeal() {
+		c.engine.RestoreDeal(deal)
+	}
+
 	for _, ord := range set.toCreate {
 		c.engine.CreateOrder(ord)
 	}
 
 	for _, ord := range set.toRestore {
 		c.engine.RestoreOrder(ord)
-	}
-
-	for _, deal := range existingDeals.GetDeal() {
-		c.engine.RestoreDeal(deal)
 	}
 
 	<-ctx.Done()
