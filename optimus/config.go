@@ -28,13 +28,14 @@ type OptimizationConfig struct {
 }
 
 type Config struct {
-	Blockchain  *blockchain.Config          `yaml:"blockchain"`
-	PrivateKey  privateKey                  `yaml:"ethereum" json:"-"`
-	Logging     logging.Config              `yaml:"logging"`
-	Node        nodeConfig                  `yaml:"node"`
-	Workers     map[auth.Addr]*workerConfig `yaml:"workers"`
-	Benchmarks  benchmarks.Config           `yaml:"benchmarks"`
-	Marketplace marketplaceConfig           `yaml:"marketplace"`
+	Restrictions *RestrictionsConfig         `yaml:"restrictions"`
+	Blockchain   *blockchain.Config          `yaml:"blockchain"`
+	PrivateKey   privateKey                  `yaml:"ethereum" json:"-"`
+	Logging      logging.Config              `yaml:"logging"`
+	Node         nodeConfig                  `yaml:"node"`
+	Workers      map[auth.Addr]*workerConfig `yaml:"workers"`
+	Benchmarks   benchmarks.Config           `yaml:"benchmarks"`
+	Marketplace  marketplaceConfig           `yaml:"marketplace"`
 }
 
 func (m *Config) Validate() error {
@@ -57,6 +58,11 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+type RestrictionsConfig struct {
+	Name     string  `yaml:"cgroup_name" default:"/optimus"`
+	CPUCount float64 `yaml:"cpu_count" default:"1.0"`
 }
 
 type workerConfig struct {
