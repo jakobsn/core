@@ -33,7 +33,7 @@ type wtmResponse struct {
 }
 
 func getTokenParamsFromWTM(id int) (*wtmCoin, error) {
-	data, err := fetchURLWithRetry(whatToMineURL)
+	data, err := FetchURLWithRetry(whatToMineURL)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +57,7 @@ type coinMarketCapResponse struct {
 }
 
 func getPriceFromCMC(url string) (*big.Int, error) {
-	data, err := fetchURLWithRetry(url)
+	data, err := FetchURLWithRetry(url)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +80,7 @@ func getPriceFromCMC(url string) (*big.Int, error) {
 	return price, nil
 }
 
-func fetchURLWithRetry(url string) ([]byte, error) {
+func FetchURLWithRetry(url string) ([]byte, error) {
 	body, err := fetchOnce(url)
 	if err != nil {
 		for i := 0; i < retryCount; i++ {

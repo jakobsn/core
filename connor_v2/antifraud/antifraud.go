@@ -132,6 +132,8 @@ func (m *antiFraud) TrackTask(ctx context.Context, deal *sonm.Deal, taskID strin
 		return fmt.Errorf("could not register spawned task %s, no deal with id %s", taskID, deal.Id.Unwrap().String())
 	}
 
+	go NewNanopoolWatcher(m.log, deal).Run(ctx)
+
 	meta.logProcessor = NewLogProcessor(&m.cfg.LogProcessorConfig, m.log, m.nodeConnection, deal, taskID)
 	return meta.logProcessor.Run(ctx)
 }
