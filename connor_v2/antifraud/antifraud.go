@@ -23,6 +23,7 @@ type AntiFraud interface {
 
 type LogProcessor interface {
 	Run(ctx context.Context) error
+	TaskID() string
 	TaskQuality() (accurate bool, quality float64)
 }
 
@@ -84,29 +85,33 @@ func (m *antiFraud) checkDeals(ctx context.Context) error {
 			continue
 		}
 
+		log := m.log.With(
+			zap.String("deal_id", dealMeta.deal.GetId().Unwrap().String()),
+			zap.String("task_id", dealMeta.logProcessor.TaskID()))
+
 		accurate, quality := dealMeta.logProcessor.TaskQuality()
 		if !accurate {
-			m.log.Debug("skipping inaccurate quality", zap.Float64("value", quality))
+			log.Debug("skipping inaccurate quality", zap.Float64("value", quality))
 			continue
 		}
 
 		if quality < m.cfg.TaskQuality {
-			m.log.Warn("task quality is less that required, closing deal",
+			log.Warn("task quality is less that required, closing deal",
 				zap.Float64("calculated", quality), zap.Float64("required", m.cfg.TaskQuality))
 
 			watcher, ok := m.blacklistWatchers[dealMeta.deal.SupplierID.Unwrap()]
 			if !ok {
-				m.log.Warn("cannot obtain blacklist watcher for deal, skipping")
+				log.Warn("cannot obtain blacklist watcher for deal, skipping")
 				continue
 			}
 
 			watcher.Failure()
 			if err := m.finishDeal(dealMeta.deal, sonm.BlacklistType_BLACKLIST_WORKER); err != nil {
-				m.log.Warn("cannot finish deal", zap.Error(err))
+				log.Warn("cannot finish deal", zap.Error(err))
 			}
 			continue
 		} else {
-			m.log.Debug("task quality is fit into required required value", zap.Float64("quality", quality))
+			log.Debug("task quality is fit into required required value", zap.Float64("quality", quality))
 			m.blacklistWatchers[dealMeta.deal.SupplierID.Unwrap()].Success()
 		}
 	}

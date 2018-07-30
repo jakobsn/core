@@ -106,8 +106,6 @@ func (e *engine) waitForDeal(order *Corder) {
 		case <-e.ctx.Done():
 			return
 		case <-t.C:
-			log.Debug("checking for deal for order")
-
 			actualPrice := e.priceProvider.GetPrice()
 			if order.isReplaceable(actualPrice, e.miningCfg.TokenPrice.Threshold) {
 				log.Info("we can replace order with more profitable one",

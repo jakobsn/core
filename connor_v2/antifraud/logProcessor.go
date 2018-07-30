@@ -66,6 +66,10 @@ func (m *EthClaymoreLogProcessor) TaskQuality() (bool, float64) {
 	return accurate, actual / desired
 }
 
+func (m *EthClaymoreLogProcessor) TaskID() string {
+	return m.taskID
+}
+
 func (m *EthClaymoreLogProcessor) Run(ctx context.Context) error {
 	m.hashrateEWMA.Update(int64(m.currentHashrate * 5))
 	m.hashrateEWMA.Tick()
