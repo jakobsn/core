@@ -46,12 +46,11 @@ func (m *NilLogProcessor) Run(ctx context.Context) error {
 }
 
 type EthClaymoreLogProcessor struct {
-	log        *zap.Logger
-	cfg        *LogProcessorConfig
-	deal       *sonm.Deal
-	taskID     string
-	taskClient sonm.TaskManagementClient
-	//TODO: migrate to rcrowly/go-metrics
+	log          *zap.Logger
+	cfg          *LogProcessorConfig
+	deal         *sonm.Deal
+	taskID       string
+	taskClient   sonm.TaskManagementClient
 	hashrateEWMA metrics.EWMA
 
 	startTime        time.Time
