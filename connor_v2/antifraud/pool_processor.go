@@ -23,7 +23,7 @@ func NewNanopoolWatcher(log *zap.Logger, deal *sonm.Deal) *nanoPoolWatcher {
 	workerID := fmt.Sprintf("CONNOR_%s", deal.GetId().Unwrap().String())
 	l := log.Named("nanopool").With(
 		zap.String("deal_id", deal.GetId().Unwrap().String()),
-		zap.String("worker_id", "CONNOR_2439"))
+		zap.String("worker_id", workerID))
 
 	return &nanoPoolWatcher{
 		log:      l,
