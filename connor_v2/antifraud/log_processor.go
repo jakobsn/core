@@ -25,7 +25,7 @@ func NewLogProcessor(cfg *LogProcessorConfig, log *zap.Logger, nodeConnection *g
 		deal:             deal,
 		taskID:           taskID,
 		taskClient:       sonm.NewTaskManagementClient(nodeConnection),
-		hashrateEWMA:     metrics.NewEWMA5(),
+		hashrateEWMA:     metrics.NewEWMA1(),
 		lastHashrateTime: time.Now(),
 		startTime:        time.Now(),
 		currentHashrate:  float64(deal.Benchmarks.GPUEthHashrate()),
@@ -70,14 +70,12 @@ func (m *EthClaymoreLogProcessor) TaskID() string {
 }
 
 func (m *EthClaymoreLogProcessor) Run(ctx context.Context) error {
-	m.hashrateEWMA.Update(int64(m.currentHashrate * 5))
-	m.hashrateEWMA.Tick()
-
 	go m.fetchLogs(ctx)
 	m.log.Info("starting task's warm-up")
 	timer := time.NewTimer(m.cfg.TaskWarmupDelay)
 	select {
 	case <-ctx.Done():
+		return ctx.Err()
 	case <-timer.C:
 	}
 
@@ -85,20 +83,19 @@ func (m *EthClaymoreLogProcessor) Run(ctx context.Context) error {
 	m.log.Info("task is warmed-up")
 
 	// This should not be configured, as ticker in ewma is bound to 5 seconds
-	ticker := time.NewTicker(time.Second * 5)
+	ewmaTick := time.NewTicker(5 * time.Second)
+	ewmaUpdate := time.NewTicker(1 * time.Second)
+
+	defer ewmaTick.Stop()
+	defer ewmaUpdate.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-ticker.C:
-			if m.lastHashrateTime.Add(m.cfg.TaskWarmupDelay).Before(time.Now()) {
-				m.hashrateEWMA.Update(0.0)
-				m.log.Warn("no hashrate after warm-up")
-			} else {
-				m.log.Debug("updating hashrate", zap.Float64("hashrate", m.currentHashrate))
-				// EWMA period is 5 sec, so multiply by 5
-				m.hashrateEWMA.Update(int64(m.currentHashrate * 5.))
-			}
+		case <-ewmaUpdate.C:
+			m.hashrateEWMA.Update(int64(m.currentHashrate))
+		case <-ewmaTick.C:
 			m.hashrateEWMA.Tick()
 		}
 	}
@@ -186,7 +183,7 @@ func (m *EthClaymoreLogProcessor) parseLogs(ctx context.Context, reader io.Reade
 
 			m.currentHashrate = hashrate * 1e6
 			m.lastHashrateTime = time.Now()
-			m.log.Info("current calculated hashrate", zap.Float64("hashrate", m.currentHashrate))
+			m.log.Debug("current calculated hashrate from logs", zap.Float64("hashrate", m.currentHashrate))
 		}
 	}
 

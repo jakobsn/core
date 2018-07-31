@@ -77,11 +77,14 @@ func (m *antiFraud) Run(ctx context.Context) error {
 //TODO: async
 func (m *antiFraud) checkDeals(ctx context.Context) error {
 	m.log.Debug("checking deals")
+	defer m.log.Debug("stop checking deals")
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	for _, dealMeta := range m.meta {
 		if dealMeta.logProcessor == nil {
-			m.log.Debug("skipping deal without task")
+			m.log.Debug("skipping deal without task",
+				zap.String("deal_id", dealMeta.deal.GetId().Unwrap().String()))
 			continue
 		}
 
@@ -95,24 +98,24 @@ func (m *antiFraud) checkDeals(ctx context.Context) error {
 			continue
 		}
 
+		watcher, ok := m.blacklistWatchers[dealMeta.deal.SupplierID.Unwrap()]
+		if !ok {
+			log.Warn("cannot obtain blacklist watcher for deal, skipping")
+			continue
+		}
+
 		if quality < m.cfg.TaskQuality {
 			log.Warn("task quality is less that required, closing deal",
 				zap.Float64("calculated", quality), zap.Float64("required", m.cfg.TaskQuality))
 
-			watcher, ok := m.blacklistWatchers[dealMeta.deal.SupplierID.Unwrap()]
-			if !ok {
-				log.Warn("cannot obtain blacklist watcher for deal, skipping")
-				continue
-			}
-
-			watcher.Failure()
 			if err := m.finishDeal(dealMeta.deal, sonm.BlacklistType_BLACKLIST_WORKER); err != nil {
 				log.Warn("cannot finish deal", zap.Error(err))
 			}
-			continue
+
+			watcher.Failure()
 		} else {
 			log.Debug("task quality is fit into required required value", zap.Float64("quality", quality))
-			m.blacklistWatchers[dealMeta.deal.SupplierID.Unwrap()].Success()
+			watcher.Success()
 		}
 	}
 
@@ -124,17 +127,17 @@ func (m *antiFraud) checkDeals(ctx context.Context) error {
 }
 
 func (m *antiFraud) TrackTask(ctx context.Context, deal *sonm.Deal, taskID string) error {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
+	m.mu.Lock()
 	meta, ok := m.meta[deal.Id.Unwrap().String()]
 	if !ok {
 		return fmt.Errorf("could not register spawned task %s, no deal with id %s", taskID, deal.Id.Unwrap().String())
 	}
 
-	go NewNanopoolWatcher(m.log, deal).Run(ctx)
-
 	meta.logProcessor = NewLogProcessor(&m.cfg.LogProcessorConfig, m.log, m.nodeConnection, deal, taskID)
+	poolWatcher := NewNanopoolWatcher(m.log, deal)
+	m.mu.Unlock()
+
+	go poolWatcher.Run(ctx)
 	return meta.logProcessor.Run(ctx)
 }
 
@@ -156,6 +159,7 @@ func (m *antiFraud) DealOpened(deal *sonm.Deal) error {
 			client:      sonm.NewBlacklistClient(m.nodeConnection),
 		}
 	}
+
 	return nil
 }
 
